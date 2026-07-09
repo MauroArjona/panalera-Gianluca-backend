@@ -6,6 +6,7 @@ import { rateLimit } from 'express-rate-limit'
 
 import authRoutes    from './routes/auth'
 import productRoutes from './routes/products'
+import orderRoutes   from './routes/orders'
 import catalogRoutes from './routes/catalog'
 import uploadRoutes  from './routes/upload'  
 import { errorHandler, notFound } from './middlewares/auth'
@@ -14,7 +15,9 @@ const app  = express()
 const PORT = Number(process.env.PORT) || 3000
 
 // ── Seguridad ────────────────────────────────────────────────────────────────
-app.use(helmet())
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}))
 app.use(cors({
   origin: (origin, callback) => {
     const allowed = (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
@@ -59,7 +62,7 @@ app.use(express.urlencoded({ extended: true }))
 app.get('/', (_req, res) => {
   res.json({
     success: true,
-    message: 'Bienvenido a la API de Calzados.',
+    message: 'Bienvenido a la API de Panalera Gianluca.',
   })
 })
 
@@ -67,7 +70,7 @@ app.get('/', (_req, res) => {
 app.get('/health', (_req, res) => {
   res.json({
     success: true,
-    message: 'Calzados API corriendo.',
+    message: 'Panalera Gianluca API corriendo.',
     env: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
   })
@@ -76,6 +79,7 @@ app.get('/health', (_req, res) => {
 // ── Rutas ────────────────────────────────────────────────────────────────────
 app.use('/v1/auth',     authLimiter, authRoutes)
 app.use('/v1/products', productRoutes)
+app.use('/v1/orders',   orderRoutes)
 app.use('/v1/catalog',  catalogRoutes)
 app.use('/v1/upload',   uploadRoutes)   
 

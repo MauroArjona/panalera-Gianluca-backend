@@ -1,27 +1,14 @@
 import { supabase } from '../db/supabase'
-import { httpError } from '../middlewares/auth'
 
-// ─── categoriaService ─────────────────────────────────────────────────────────
 export const categoriaService = {
-
   async list() {
     const { data, error } = await supabase
       .from('categorias')
-      .select(`*, subcategorias ( id, nombre )`)
-      .order('nombre')
+      .select('*, subcategorias(id,categoria_id,nombre,created_at)')
+      .order('nombre', { ascending: true })
+
     if (error) throw new Error(error.message)
     return data ?? []
-  },
-
-  async getById(id: string) {
-    const { data, error } = await supabase
-      .from('categorias')
-      .select(`*, subcategorias ( id, nombre )`)
-      .eq('id', id)
-      .single()
-
-    if (error || !data) throw httpError('Categoría no encontrada.', 404)
-    return data
   },
 
   async create(nombre: string) {
@@ -35,7 +22,7 @@ export const categoriaService = {
     return data
   },
 
-  async update(id: string, nombre: string) {
+  async update(id: number, nombre: string) {
     const { data, error } = await supabase
       .from('categorias')
       .update({ nombre })
@@ -43,24 +30,22 @@ export const categoriaService = {
       .select()
       .single()
 
-    if (error || !data) throw httpError('Categoría no encontrada.', 404)
+    if (error) throw new Error(error.message)
     return data
   },
 
-  async remove(id: string) {
+  async delete(id: number) {
     const { error } = await supabase.from('categorias').delete().eq('id', id)
     if (error) throw new Error(error.message)
   },
 }
 
-// ─── subcategoriaService ──────────────────────────────────────────────────────
 export const subcategoriaService = {
-
-  async list(categoriaId?: string) {
+  async list(categoriaId?: number) {
     let query = supabase
       .from('subcategorias')
-      .select(`*, categoria:categorias ( id, nombre )`)
-      .order('nombre')
+      .select('*, categoria:categorias(id,nombre,created_at)')
+      .order('nombre', { ascending: true })
 
     if (categoriaId) query = query.eq('categoria_id', categoriaId)
 
@@ -69,18 +54,7 @@ export const subcategoriaService = {
     return data ?? []
   },
 
-  async getById(id: string) {
-    const { data, error } = await supabase
-      .from('subcategorias')
-      .select(`*, categoria:categorias ( id, nombre )`)
-      .eq('id', id)
-      .single()
-
-    if (error || !data) throw httpError('Subcategoría no encontrada.', 404)
-    return data
-  },
-
-  async create(nombre: string, categoriaId: string) {
+  async create(nombre: string, categoriaId: number) {
     const { data, error } = await supabase
       .from('subcategorias')
       .insert({ nombre, categoria_id: categoriaId })
@@ -91,7 +65,7 @@ export const subcategoriaService = {
     return data
   },
 
-  async update(id: string, payload: { nombre?: string; categoria_id?: string }) {
+  async update(id: number, payload: { nombre?: string; categoria_id?: number }) {
     const { data, error } = await supabase
       .from('subcategorias')
       .update(payload)
@@ -99,65 +73,12 @@ export const subcategoriaService = {
       .select()
       .single()
 
-    if (error || !data) throw httpError('Subcategoría no encontrada.', 404)
+    if (error) throw new Error(error.message)
     return data
   },
 
-  async remove(id: string) {
+  async delete(id: number) {
     const { error } = await supabase.from('subcategorias').delete().eq('id', id)
-    if (error) throw new Error(error.message)
-  },
-}
-
-// ─── colorService ─────────────────────────────────────────────────────────────
-export const colorService = {
-
-  async list() {
-    const { data, error } = await supabase
-      .from('colores')
-      .select('*')
-      .order('nombre')
-
-    if (error) throw new Error(error.message)
-    return data ?? []
-  },
-
-  async getById(id: string) {
-    const { data, error } = await supabase
-      .from('colores')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    if (error || !data) throw httpError('Color no encontrado.', 404)
-    return data
-  },
-
-  async create(nombre: string, codigo_hex?: string) {
-    const { data, error } = await supabase
-      .from('colores')
-      .insert({ nombre, codigo_hex })
-      .select()
-      .single()
-
-    if (error) throw new Error(error.message)
-    return data
-  },
-
-  async update(id: string, payload: { nombre?: string; codigo_hex?: string }) {
-    const { data, error } = await supabase
-      .from('colores')
-      .update(payload)
-      .eq('id', id)
-      .select()
-      .single()
-
-    if (error || !data) throw httpError('Color no encontrado.', 404)
-    return data
-  },
-
-  async remove(id: string) {
-    const { error } = await supabase.from('colores').delete().eq('id', id)
     if (error) throw new Error(error.message)
   },
 }

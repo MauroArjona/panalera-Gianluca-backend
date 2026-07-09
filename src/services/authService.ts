@@ -61,7 +61,7 @@ export const authService = {
 
     if (error || !data.user) throw httpError('Credenciales inválidas.', 401)
 
-    const role = (data.user.user_metadata?.role as 'customer' | 'admin') ?? 'customer'
+    const role = resolveRole(email, data.user.user_metadata?.role)
     const name = (data.user.user_metadata?.name as string) ?? email.split('@')[0]
 
     const token = makeToken({ sub: data.user.id, email, role })
@@ -91,6 +91,18 @@ export const authService = {
     // el estado del cliente global — correcto ✅
     await supabase.auth.admin.signOut(userId)
   },
+}
+
+function resolveRole(email: string, metadataRole: unknown): 'customer' | 'admin' {
+  if (metadataRole === 'admin') return 'admin'
+
+  const adminEmails = (process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+
+  if (adminEmails.includes('*')) return 'admin'
+  return adminEmails.includes(email.toLowerCase()) ? 'admin' : 'customer'
 }
 
 function makeToken(payload: JwtPayload): string {

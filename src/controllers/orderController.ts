@@ -3,41 +3,26 @@ import { z } from 'zod'
 import { orderService } from '../services/orderService'
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
-const shippingSchema = z.object({
-  firstName: z.string().min(1),
-  lastName:  z.string().min(1),
-  email:     z.string().email(),
-  phone:     z.string().min(6),
-  address:   z.string().min(5),
-  city:      z.string().min(2),
-  state:     z.string().min(2),
-  zipCode:   z.string().min(3),
-  country:   z.string().min(2),
+const ventaItemSchema = z.object({
+  productId: z.number().int().positive('productId debe ser un número positivo'),
+  quantity: z.number().int().positive('quantity debe ser un número positivo'),
+  price: z.number().positive('price debe ser positivo'),
+  size: z.string().optional(),
 })
 
-const orderItemSchema = z.object({
-  productId: z.number().int().positive(),
-  quantity:  z.number().int().positive(),
-  size:      z.string().min(1),
-  color:     z.string().min(1),  // JSON string
-})
-
-const createOrderSchema = z.object({
-  items:           z.array(orderItemSchema).min(1, 'Se requiere al menos un ítem'),
-  shippingAddress: shippingSchema,
+const createVentaSchema = z.object({
+  items: z.array(ventaItemSchema).min(1, 'Se requiere al menos un ítem'),
+  total: z.number().positive('El total debe ser positivo'),
+  estado: z.string().optional().default('pendiente'),
 })
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
 export const orderController = {
 
-  // GET /orders  (usuario autenticado → sus órdenes; admin → todas)
+  // GET /orders  (lista todas las ventas - admin)
   async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const { sub: userId, role } = req.user!
-      const data = role === 'admin'
-        ? await orderService.listAll()
-        : await orderService.listByUser(userId)
-
+      const data = await orderService.listAll()
       res.json({ success: true, data })
     } catch (err) {
       next(err)
@@ -47,8 +32,12 @@ export const orderController = {
   // GET /orders/:id
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
-      const { sub: userId, role } = req.user!
-      const data = await orderService.getById(req.params.id, userId, role === 'admin')
+      const id = Number(req.params.id)
+      if (isNaN(id)) {
+        res.status(400).json({ success: false, message: 'ID inválido' })
+        return
+      }
+      const data = await orderService.getById(id)
       res.json({ success: true, data })
     } catch (err) {
       next(err)
@@ -58,14 +47,14 @@ export const orderController = {
   // POST /orders
   async create(req: Request, res: Response, next: NextFunction) {
     try {
-      const parsed = createOrderSchema.safeParse(req.body)
+      const parsed = createVentaSchema.safeParse(req.body)
       if (!parsed.success) {
         res.status(400).json({ success: false, message: parsed.error.errors[0]?.message })
         return
       }
 
-      const data = await orderService.create(req.user!.sub, parsed.data)
-      res.status(201).json({ success: true, data, message: 'Orden creada correctamente.' })
+      const data = await orderService.create(parsed.data)
+      res.status(201).json({ success: true, data, message: 'Venta creada correctamente.' })
     } catch (err) {
       next(err)
     }
@@ -74,14 +63,31 @@ export const orderController = {
   // PATCH /orders/:id/status  (admin)
   async updateStatus(req: Request, res: Response, next: NextFunction) {
     try {
-      const { status } = req.body
-      if (!status) {
-        res.status(400).json({ success: false, message: 'Se requiere el campo "status".' })
+      const id = Number(req.params.id)
+      if (isNaN(id)) {
+        res.status(400).json({ success: false, message: 'ID inválido' })
         return
       }
 
-      const data = await orderService.updateStatus(req.params.id, status)
+      const { estado } = req.body
+      if (!estado) {
+        res.status(400).json({ success: false, message: 'Se requiere el campo "estado".' })
+        return
+      }
+
+      const data = await orderService.updateStatus(id, estado)
       res.json({ success: true, data, message: 'Estado actualizado.' })
+    } catch (err) {
+      next(err)
+    }
+  },
+
+  // GET /orders/estado/:estado  (filtrar por estado)
+  async listByEstado(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { estado } = req.params
+      const data = await orderService.listByEstado(estado)
+      res.json({ success: true, data })
     } catch (err) {
       next(err)
     }

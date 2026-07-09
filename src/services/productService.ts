@@ -1,328 +1,232 @@
-import slugify from 'slugify'
 import { supabase } from '../db/supabase'
 import { httpError } from '../middlewares/auth'
-import type { ProductoApi, ProductoCompleto, ProductoInsert, ProductoUpdate } from '../types'
+import type { ProductoApi, ProductoInsert, ProductoRow, ProductoUpdate } from '../types'
 
-// ─── Filtros del listado ──────────────────────────────────────────────────────
 export interface ProductFilters {
-  categoria?: string        // nombre de categoría
-  subcategoria?: string     // nombre de subcategoría
-  search?: string           // busca en nombre y descripción
+  category?: string
+  categoriaId?: number
+  subcategoriaId?: number
+  search?: string
   minPrice?: number
   maxPrice?: number
-  sortBy?: 'precio_asc' | 'precio_desc' | 'nombre_asc' | 'destacado'
+  sortBy?: 'price_asc' | 'price_desc' | 'name_asc' | 'newest'
+  soloPromo?: boolean
   soloDestacados?: boolean
-  soloActivos?: boolean     // default true
+  soloCarrusel?: boolean
   page?: number
   perPage?: number
 }
 
-// ─── Mapper: ProductoCompleto → ProductoApi (shape para el frontend) ──────────
-function toApi(p: ProductoCompleto): ProductoApi {
-  const imagenes = (p.imagenes ?? []).map((i) => i.url)
-  const sizes    = [...new Set((p.talles ?? []).map((t) => t.talle))]
-  const colors   = (p.variantes ?? [])
-    .filter((v) => v.color)
-    .map((v) => ({ name: v.color!.nombre, hex: v.color!.codigo_hex ?? '#000000' }))
-    // deduplicar por nombre
-    .filter((c, idx, arr) => arr.findIndex((x) => x.name === c.name) === idx)
+const PRODUCT_SELECT = `
+  *,
+  subcategoria:subcategorias(id,categoria_id,nombre,created_at,categoria:categorias(id,nombre,created_at)),
+  imagenes(id,producto_id,url,created_at),
+  talles(id,producto_id,talle,stock,created_at)
+`
 
-  const subcategoriaNombre = p.subcategoria?.nombre ?? ''
-  const categoriaNombre    = p.subcategoria?.categoria?.nombre ?? ''
+function toApi(p: ProductoRow): ProductoApi {
+  const images = (p.imagenes ?? [])
+    .sort((a, b) => a.id - b.id)
+    .map((image) => image.url)
+  const talles = (p.talles ?? [])
+    .sort((a, b) => a.id - b.id)
+    .map((item) => ({ id: item.id, talle: item.talle, stock: Number(item.stock ?? 0) }))
+  const stock = talles.reduce((sum, item) => sum + item.stock, 0)
 
   return {
-    id:            p.id,
-    codigo:        p.codigo,
-    name:          p.nombre,
-    price:         Number(p.precio),
-    originalPrice: p.precio_anterior ? Number(p.precio_anterior) : undefined,
-    image:         imagenes[0] ?? '',
-    images:        imagenes,
-    category:      categoriaNombre,
-    subcategory:   subcategoriaNombre,
-    sizes,
-    colors,
-    description:   p.descripcion ?? '',
-    featured:      p.destacado,
-    inCarrusel:    p.en_carrusel, // <-- falta esto
-    inStock:       p.activo,
-    slug:          slugify(`${p.nombre}-${p.codigo}`, { lower: true, strict: true }),
+    id: p.id,
+    name: p.name,
+    price: Number(p.price),
+    image: images[0] ?? '',
+    images,
+    category: p.subcategoria?.categoria?.nombre ?? '',
+    categoriaId: p.subcategoria?.categoria_id ?? null,
+    subcategoriaId: p.subcategoria_id,
+    subcategory: p.subcategoria?.nombre ?? '',
+    stock,
+    talle: talles.map((item) => item.talle).join(', ') || null,
+    talles,
+    isPromo: p.is_promo,
+    oldPrice: p.old_price ? Number(p.old_price) : null,
+    marca: null,
+    enCarrusel: p.en_carrusel,
+    destacado: p.destacado,
+    createdAt: p.created_at,
   }
 }
 
-// ─── Query base con todos los joins ──────────────────────────────────────────
-const SELECT_FULL = `
-  *,
-  subcategoria:subcategorias (
-    id, nombre,
-    categoria:categorias ( id, nombre )
-  ),
-  imagenes ( id, url ),
-  talles ( id, talle ),
-  variantes (
-    id, talle, created_at,
-    color:colores ( id, nombre, codigo_hex )
-  )
-`
+async function resolveCategoriaId(category?: string, categoriaId?: number) {
+  if (categoriaId) return categoriaId
+  if (!category) return undefined
 
-// ─── productService ───────────────────────────────────────────────────────────
+  const { data, error } = await supabase
+    .from('categorias')
+    .select('id')
+    .ilike('nombre', category)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  return data?.id as number | undefined
+}
+
+async function resolveSubcategoriaId(subcategory?: string, subcategoriaId?: number) {
+  if (subcategoriaId) return subcategoriaId
+  if (!subcategory) return undefined
+
+  const { data, error } = await supabase
+    .from('subcategorias')
+    .select('id')
+    .ilike('nombre', subcategory)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  return data?.id as number | undefined
+}
+
+async function listSubcategoriaIdsByCategoria(categoriaId?: number) {
+  if (!categoriaId) return undefined
+
+  const { data, error } = await supabase
+    .from('subcategorias')
+    .select('id')
+    .eq('categoria_id', categoriaId)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((item) => item.id as number)
+}
+
+async function replaceImages(productId: number, images: string[]) {
+  await supabase.from('imagenes').delete().eq('producto_id', productId)
+  const cleaned = images.map((url) => url.trim()).filter(Boolean)
+  if (cleaned.length === 0) return
+
+  const { error } = await supabase
+    .from('imagenes')
+    .insert(cleaned.map((url) => ({ producto_id: productId, url })))
+
+  if (error) throw new Error(error.message)
+}
+
+async function replaceTalles(productId: number, talles: Array<{ talle: string; stock: number }>) {
+  await supabase.from('talles').delete().eq('producto_id', productId)
+  const cleaned = talles
+    .map((item) => ({ talle: item.talle.trim(), stock: Number(item.stock ?? 0) }))
+    .filter((item) => item.talle)
+  if (cleaned.length === 0) return
+
+  const { error } = await supabase
+    .from('talles')
+    .insert(cleaned.map((item) => ({ producto_id: productId, ...item })))
+
+  if (error) throw new Error(error.message)
+}
+
 export const productService = {
-
-  // ── Listar con filtros y paginación ─────────────────────────────────────────
   async list(filters: ProductFilters = {}) {
-    const page    = Math.max(1, filters.page    ?? 1)
-    const perPage = Math.min(50, filters.perPage ?? 9)
-    const from    = (page - 1) * perPage
-    const to      = from + perPage - 1
+    const page = Math.max(1, filters.page ?? 1)
+    const perPage = Math.min(1000, filters.perPage ?? 12)
+    const from = (page - 1) * perPage
+    const to = from + perPage - 1
+    const categoriaId = await resolveCategoriaId(filters.category, filters.categoriaId)
+    const subcategoriaId = await resolveSubcategoriaId(undefined, filters.subcategoriaId)
+    const subcategoriaIds = await listSubcategoriaIdsByCategoria(categoriaId)
 
-    // ── Paso 1: resolver IDs de subcategorías que coincidan con los filtros ──
-    // Necesario para filtrar en la query principal y que el count sea correcto.
-    // El filtro en JS post-query hacía que el count fuera siempre el total general.
-    let subcategoriaIds: string[] | null = null
-
-    if (filters.categoria || filters.subcategoria) {
-      const { data: subs, error: subErr } = await supabase
-        .from('subcategorias')
-        .select('id, nombre, categoria:categorias(id, nombre)')
-
-      if (subErr) throw new Error(subErr.message)
-
-      let filtered = (subs ?? []) as Array<{
-        id: string
-        nombre: string
-        categoria: { id: string; nombre: string } | null
-      }>
-
-      if (filters.categoria) {
-        const cat = filters.categoria.toLowerCase()
-        filtered = filtered.filter((s) => s.categoria?.nombre.toLowerCase() === cat)
-      }
-
-      if (filters.subcategoria) {
-        const sub = filters.subcategoria.toLowerCase()
-        filtered = filtered.filter((s) => s.nombre.toLowerCase() === sub)
-      }
-
-      subcategoriaIds = filtered.map((s) => s.id)
-
-      // Si no hay subcategorías que coincidan, devolver vacío directamente
-      if (subcategoriaIds.length === 0) {
-        return { data: [], total: 0, page, perPage, totalPages: 0 }
-      }
-    }
-
-    // ── Paso 2: query principal ───────────────────────────────────────────────
     let query = supabase
       .from('productos')
-      .select(SELECT_FULL, { count: 'exact' })
+      .select(PRODUCT_SELECT, { count: 'exact' })
 
-    // Filtrar por subcategoria_id en BD (count correcto)
-    if (subcategoriaIds !== null) {
-      query = query.in('subcategoria_id', subcategoriaIds)
-    }
-
-    // Filtro activo (default: solo activos)
-    // if (filters.soloActivos !== false) query = query.eq('activo', true)
-
-    // Destacados
+    if (subcategoriaId) query = query.eq('subcategoria_id', subcategoriaId)
+    else if (subcategoriaIds) query = subcategoriaIds.length > 0
+      ? query.in('subcategoria_id', subcategoriaIds)
+      : query.eq('subcategoria_id', -1)
+    if (filters.search) query = query.ilike('name', `%${filters.search}%`)
+    if (filters.soloPromo) query = query.eq('is_promo', true)
     if (filters.soloDestacados) query = query.eq('destacado', true)
+    if (filters.soloCarrusel) query = query.eq('en_carrusel', true)
+    if (filters.minPrice !== undefined) query = query.gte('price', filters.minPrice)
+    if (filters.maxPrice !== undefined) query = query.lte('price', filters.maxPrice)
 
-    // Precio
-    if (filters.minPrice !== undefined) query = query.gte('precio', filters.minPrice)
-    if (filters.maxPrice !== undefined) query = query.lte('precio', filters.maxPrice)
-
-    // Búsqueda en nombre/descripción
-    if (filters.search) {
-      query = query.or(
-        `nombre.ilike.%${filters.search}%,descripcion.ilike.%${filters.search}%`,
-      )
-    }
-
-    // Ordenamiento
     switch (filters.sortBy) {
-      case 'precio_asc':  query = query.order('precio', { ascending: true });  break
-      case 'precio_desc': query = query.order('precio', { ascending: false }); break
-      case 'nombre_asc':  query = query.order('nombre', { ascending: true });  break
-      default:            query = query.order('destacado', { ascending: false })
-                                       .order('created_at',  { ascending: false })
+      case 'price_asc':
+        query = query.order('price', { ascending: true })
+        break
+      case 'price_desc':
+        query = query.order('price', { ascending: false })
+        break
+      case 'name_asc':
+        query = query.order('name', { ascending: true })
+        break
+      default:
+        query = query.order('created_at', { ascending: false })
     }
 
-    query = query.range(from, to)
+    const { data, error, count } = await query.range(from, to)
+    if (error) throw new Error(`Error al obtener productos: ${error.message}`)
 
-    const { data, error, count } = await query
-    if (error) throw new Error(error.message)
-
-    const items      = (data ?? []) as unknown as ProductoCompleto[]
-    const total      = count ?? 0
-    const totalPages = Math.ceil(total / perPage)
-
-    return { data: items.map(toApi), total, page, perPage, totalPages }
+    const total = count ?? 0
+    return {
+      data: ((data ?? []) as ProductoRow[]).map(toApi),
+      total,
+      page,
+      perPage,
+      totalPages: Math.ceil(total / perPage),
+    }
   },
 
-  // ── Obtener por ID ───────────────────────────────────────────────────────────
-  async getById(id: string): Promise<ProductoApi> {
+  async getById(id: number): Promise<ProductoApi> {
     const { data, error } = await supabase
       .from('productos')
-      .select(SELECT_FULL)
+      .select(PRODUCT_SELECT)
       .eq('id', id)
       .single()
 
     if (error || !data) throw httpError('Producto no encontrado.', 404)
-    return toApi(data as unknown as ProductoCompleto)
+    return toApi(data as ProductoRow)
   },
 
-  // ── Obtener por código ───────────────────────────────────────────────────────
-  async getByCodigo(codigo: string): Promise<ProductoApi> {
-    const { data, error } = await supabase
-      .from('productos')
-      .select(SELECT_FULL)
-      .eq('codigo', codigo)
-      .single()
-
-    if (error || !data) throw httpError('Producto no encontrado.', 404)
-    return toApi(data as unknown as ProductoCompleto)
+  async getPromos(): Promise<ProductoApi[]> {
+    return (await this.list({ soloPromo: true, perPage: 10 })).data
   },
 
-  // ── Destacados ───────────────────────────────────────────────────────────────
   async getDestacados(): Promise<ProductoApi[]> {
-    const { data, error } = await supabase
-      .from('productos')
-      .select(SELECT_FULL)
-      .eq('activo', true)
-      .eq('destacado', true)
-      .order('created_at', { ascending: false })
-      .limit(8)
-
-    if (error) throw new Error(error.message)
-    return ((data ?? []) as unknown as ProductoCompleto[]).map(toApi)
+    return (await this.list({ soloDestacados: true, perPage: 10 })).data
   },
 
-  // ── Carrusel ──────────────────────────────────────────────────────────────────
   async getCarrusel(): Promise<ProductoApi[]> {
-    const { data, error } = await supabase
-      .from('productos')
-      .select(SELECT_FULL)
-      .eq('activo', true)
-      .eq('en_carrusel', true)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    if (error) throw new Error(error.message)
-    return ((data ?? []) as unknown as ProductoCompleto[]).map(toApi)
+    return (await this.list({ soloCarrusel: true, perPage: 10 })).data
   },
 
-  // ── Crear producto (con imágenes, talles y variantes) ────────────────────────
-  async create(payload: ProductoInsert & {
-    imagenesUrls?: string[]
-    talles?: string[]
-    variantes?: Array<{ talle?: string; color_id?: string }>
-  }): Promise<ProductoApi> {
-
-    // 1. Insertar producto base
-    const { imagenesUrls, talles, variantes, ...productoData } = payload
-
-    const { data: producto, error } = await supabase
+  async create(payload: ProductoInsert): Promise<ProductoApi> {
+    const { images = [], talles = [], ...productPayload } = payload
+    const { data, error } = await supabase
       .from('productos')
-      .insert(productoData)
-      .select()
+      .insert(productPayload)
+      .select('id')
       .single()
 
-    if (error) {
-      if (error.code === '23505') throw httpError('El código de producto ya existe.', 409)
-      throw new Error(error.message)
-    }
+    if (error || !data) throw new Error(error?.message ?? 'No se pudo crear el producto.')
 
-    const productoId = producto.id
-
-    // 2. Imágenes
-    if (imagenesUrls?.length) {
-      const imgs = imagenesUrls.map((url) => ({ producto_id: productoId, url }))
-      const { error: imgErr } = await supabase.from('imagenes').insert(imgs)
-      if (imgErr) throw new Error(imgErr.message)
-    }
-
-    // 3. Talles
-    if (talles?.length) {
-      const t = talles.map((talle) => ({ producto_id: productoId, talle }))
-      const { error: talleErr } = await supabase.from('talles').insert(t)
-      if (talleErr) throw new Error(talleErr.message)
-    }
-
-    // 4. Variantes (talle + color)
-    if (variantes?.length) {
-      const v = variantes.map((va) => ({ ...va, producto_id: productoId }))
-      const { error: varErr } = await supabase.from('variantes').insert(v)
-      if (varErr) throw new Error(varErr.message)
-    }
-
-    return this.getById(productoId)
+    await replaceImages(data.id, images)
+    await replaceTalles(data.id, talles)
+    return this.getById(data.id)
   },
 
-  // ── Actualizar producto ──────────────────────────────────────────────────────
-  async update(id: string, payload: ProductoUpdate & {
-    imagenesUrls?: string[]      // reemplaza todas las imágenes
-    talles?: string[]            // reemplaza todos los talles
-    variantes?: Array<{ talle?: string; color_id?: string }>  // reemplaza todas
-  }): Promise<ProductoApi> {
+  async update(id: number, payload: ProductoUpdate): Promise<ProductoApi> {
+    const { images, talles, ...productPayload } = payload
 
-    const { imagenesUrls, talles, variantes, ...productoData } = payload
-
-    // 1. Actualizar campos del producto
-    if (Object.keys(productoData).length > 0) {
-      const { error } = await supabase
-        .from('productos')
-        .update(productoData)
-        .eq('id', id)
-
+    if (Object.keys(productPayload).length > 0) {
+      const { error } = await supabase.from('productos').update(productPayload).eq('id', id)
       if (error) throw new Error(error.message)
     }
 
-    // 2. Reemplazar imágenes si vienen en el payload
-    if (imagenesUrls !== undefined) {
-      await supabase.from('imagenes').delete().eq('producto_id', id)
-      if (imagenesUrls.length) {
-        const imgs = imagenesUrls.map((url) => ({ producto_id: id, url }))
-        const { error } = await supabase.from('imagenes').insert(imgs)
-        if (error) throw new Error(error.message)
-      }
-    }
-
-    // 3. Reemplazar talles si vienen en el payload
-    if (talles !== undefined) {
-      await supabase.from('talles').delete().eq('producto_id', id)
-      if (talles.length) {
-        const t = talles.map((talle) => ({ producto_id: id, talle }))
-        const { error } = await supabase.from('talles').insert(t)
-        if (error) throw new Error(error.message)
-      }
-    }
-
-    // 4. Reemplazar variantes si vienen en el payload
-    if (variantes !== undefined) {
-      await supabase.from('variantes').delete().eq('producto_id', id)
-      if (variantes.length) {
-        const v = variantes.map((va) => ({ ...va, producto_id: id }))
-        const { error } = await supabase.from('variantes').insert(v)
-        if (error) throw new Error(error.message)
-      }
-    }
-
+    if (images) await replaceImages(id, images)
+    if (talles) await replaceTalles(id, talles)
     return this.getById(id)
   },
 
-  // ── Eliminar (soft delete → activo = false) ──────────────────────────────────
-  async remove(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('productos')
-      .update({ activo: false })
-      .eq('id', id)
-
-    if (error) throw new Error(error.message)
-  },
-
-  // ── Eliminar permanente (solo admin) ─────────────────────────────────────────
-  async hardDelete(id: string): Promise<void> {
-    // Supabase borra en cascade: imagenes, talles, variantes
+  async delete(id: number): Promise<void> {
+    await supabase.from('imagenes').delete().eq('producto_id', id)
+    await supabase.from('talles').delete().eq('producto_id', id)
     const { error } = await supabase.from('productos').delete().eq('id', id)
     if (error) throw new Error(error.message)
   },

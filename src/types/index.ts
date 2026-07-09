@@ -1,106 +1,100 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Tipos que reflejan 1:1 las tablas del schema real de Supabase.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── Tablas base ──────────────────────────────────────────────────────────────
-
 export interface CategoriaRow {
-  id: string
+  id: number
   nombre: string
   created_at: string
 }
 
 export interface SubcategoriaRow {
-  id: string
+  id: number
+  categoria_id: number
   nombre: string
-  categoria_id: string | null
+  created_at: string
+  categoria?: CategoriaRow
+}
+
+export interface ImagenRow {
+  id: number
+  producto_id: number
+  url: string
   created_at: string
 }
 
-export interface ColorRow {
-  id: string
-  nombre: string
-  codigo_hex: string | null
+export interface TalleRow {
+  id: number
+  producto_id: number
+  talle: string
+  stock: number
   created_at: string
 }
 
 export interface ProductoRow {
-  id: string
-  codigo: string
-  nombre: string
-  descripcion: string | null
-  precio: number
-  precio_anterior: number | null
-  subcategoria_id: string | null
-  activo: boolean
-  destacado: boolean
+  id: number
+  name: string
+  price: number
+  created_at: string
+  is_promo: boolean
   en_carrusel: boolean
-  created_at: string
+  destacado: boolean
+  old_price: number | null
+  subcategoria_id: number | null
+  subcategoria?: SubcategoriaRow | null
+  imagenes?: ImagenRow[]
+  talles?: TalleRow[]
 }
 
-export interface ImagenRow {
-  id: string
-  producto_id: string | null
-  url: string
-}
-
-export interface TalleRow {
-  id: string
-  producto_id: string | null
-  talle: string
-}
-
-export interface VarianteRow {
-  id: string
-  producto_id: string | null
-  talle: string | null
-  color_id: string | null
-  created_at: string
-}
-
-export interface ProfileRow {
-  id: string   // uuid referencia auth.users
-  created_at: string
-}
-
-// ── Tipos enriquecidos (con joins) ───────────────────────────────────────────
-
-/** Producto completo con todas sus relaciones */
-export interface ProductoCompleto extends ProductoRow {
-  subcategoria: (SubcategoriaRow & { categoria: CategoriaRow | null }) | null
-  imagenes: ImagenRow[]
-  talles: TalleRow[]
-  variantes: (VarianteRow & { color: ColorRow | null })[]
-}
-
-/** Shape que devuelve la API al frontend (compatible con el tipo Product del frontend) */
 export interface ProductoApi {
-  id: string
-  codigo: string
-  name: string           // = nombre
-  price: number          // = precio
-  originalPrice?: number // = precio_anterior
-  image: string          // primera imagen
-  images: string[]       // todas las URLs
-  category: string       // nombre de categoría
-  subcategory: string    // nombre de subcategoría
-  sizes: string[]        // talles únicos
-  colors: Array<{ name: string; hex: string }>   // desde variantes → colores
-  description: string
-  featured: boolean      // = destacado
-  en_carrusel: boolean    // = en_carrusel
-  inStock: boolean       // = activo (proxy)
-  slug: string           // generado del nombre+codigo
+  id: number
+  name: string
+  price: number
+  image: string
+  images: string[]
+  category: string
+  categoriaId: number | null
+  subcategoriaId: number | null
+  subcategory: string
+  stock: number
+  talle: string | null
+  talles: Array<{ id?: number; talle: string; stock: number }>
+  isPromo: boolean
+  oldPrice: number | null
+  marca: string | null
+  enCarrusel: boolean
+  destacado: boolean
+  createdAt: string
 }
 
-// ── Inserts ──────────────────────────────────────────────────────────────────
+export interface ProductoInsert {
+  name: string
+  price: number
+  subcategoria_id?: number | null
+  is_promo?: boolean
+  destacado?: boolean
+  en_carrusel?: boolean
+  old_price?: number | null
+  images?: string[]
+  talles?: Array<{ talle: string; stock: number }>
+}
 
-export type ProductoInsert = Omit<ProductoRow, 'id' | 'created_at' | 'activo' | 'destacado'> &
-  Partial<Pick<ProductoRow, 'activo' | 'destacado'>>
+export type ProductoUpdate = Partial<ProductoInsert>
 
-export type ProductoUpdate = Partial<Omit<ProductoRow, 'id' | 'created_at'>>
+export interface VentaRow {
+  id: number
+  created_at: string
+  items: VentaItem[]
+  total: number
+  estado: string
+}
 
-// ── Respuestas API genéricas ──────────────────────────────────────────────────
+export interface VentaItem {
+  id?: number
+  productId: number
+  quantity: number
+  price: number
+  size?: string
+}
+
+export type VentaInsert = Omit<VentaRow, 'id' | 'created_at'>
+export type VentaUpdate = Partial<Pick<VentaRow, 'estado'>>
 
 export interface ApiResponse<T> {
   success: boolean
@@ -116,9 +110,8 @@ export interface PaginatedResponse<T> {
   totalPages: number
 }
 
-// ── JWT ───────────────────────────────────────────────────────────────────────
 export interface JwtPayload {
-  sub: string    // auth.users.id
+  sub: string
   email: string
   role: 'customer' | 'admin'
 }

@@ -4,12 +4,13 @@ import { requireAuth, requireAdmin } from '../middlewares/auth'
 
 const router = Router()
 
-// Todas las rutas de órdenes requieren autenticación
-router.use(requireAuth)
+// ── Públicas ────────────────────────────────────────────────────────────────
+router.get('/', orderController.list) // GET /orders
+router.get('/estado/:estado', orderController.listByEstado) // GET /orders/estado/:estado
+router.get('/:id', orderController.getById) // GET /orders/:id
+router.post('/', orderController.create) // POST /orders
 
-router.get('/',                          orderController.list)         // GET  /orders
-router.get('/:id',                       orderController.getById)      // GET  /orders/:id
-router.post('/',                         orderController.create)       // POST /orders
-router.patch('/:id/status', requireAdmin, orderController.updateStatus) // PATCH /orders/:id/status (admin)
+// ── Admin ───────────────────────────────────────────────────────────────────
+router.patch('/:id/status', requireAuth, requireAdmin, orderController.updateStatus) // PATCH /orders/:id/status
 
 export default router
