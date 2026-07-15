@@ -196,6 +196,7 @@ export const productService = {
     return (await this.list({ soloCarrusel: true, perPage: 10 })).data
   },
 
+  
   async create(payload: ProductoInsert): Promise<ProductoApi> {
     const { images = [], talles = [], ...productPayload } = payload
     const { data, error } = await supabase
