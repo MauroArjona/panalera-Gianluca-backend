@@ -5,6 +5,9 @@ import { productService } from '../services/productService'
 const talleSchema = z.object({
   talle: z.string().min(1, 'El talle es obligatorio'),
   stock: z.number().int().min(0, 'El stock no puede ser negativo'),
+  price: z.number().positive('El precio de la variante debe ser positivo').nullable().optional(),
+  units: z.string().nullable().optional(),
+  image: z.string().url('La imagen de la variante debe ser una URL valida').nullable().optional().or(z.literal('')),
 })
 
 const productoSchema = z.object({

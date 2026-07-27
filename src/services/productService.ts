@@ -21,7 +21,7 @@ const PRODUCT_SELECT = `
   *,
   subcategoria:subcategorias(id,categoria_id,nombre,created_at,categoria:categorias(id,nombre,created_at)),
   imagenes(id,producto_id,url,created_at),
-  talles(id,producto_id,talle,stock,created_at)
+  talles(id,producto_id,talle,stock,precio,unidades,imagen_url,created_at)
 `
 
 function toApi(p: ProductoRow): ProductoApi {
@@ -30,7 +30,14 @@ function toApi(p: ProductoRow): ProductoApi {
     .map((image) => image.url)
   const talles = (p.talles ?? [])
     .sort((a, b) => a.id - b.id)
-    .map((item) => ({ id: item.id, talle: item.talle, stock: Number(item.stock ?? 0) }))
+    .map((item) => ({
+      id: item.id,
+      talle: item.talle,
+      stock: Number(item.stock ?? 0),
+      price: Number(item.precio ?? p.price),
+      units: item.unidades ?? '',
+      image: item.imagen_url ?? '',
+    }))
   const stock = talles.reduce((sum, item) => sum + item.stock, 0)
 
   return {
@@ -44,7 +51,7 @@ function toApi(p: ProductoRow): ProductoApi {
     subcategoriaId: p.subcategoria_id,
     subcategory: p.subcategoria?.nombre ?? '',
     stock,
-    talle: talles.map((item) => item.talle).join(', ') || null,
+    talle: Array.from(new Set(talles.map((item) => item.talle))).join(', ') || null,
     talles,
     isPromo: p.is_promo,
     oldPrice: p.old_price ? Number(p.old_price) : null,
@@ -107,10 +114,19 @@ async function replaceImages(productId: number, images: string[]) {
   if (error) throw new Error(error.message)
 }
 
-async function replaceTalles(productId: number, talles: Array<{ talle: string; stock: number }>) {
+async function replaceTalles(
+  productId: number,
+  talles: Array<{ talle: string; stock: number; price?: number | null; units?: string | null; image?: string | null }>,
+) {
   await supabase.from('talles').delete().eq('producto_id', productId)
   const cleaned = talles
-    .map((item) => ({ talle: item.talle.trim(), stock: Number(item.stock ?? 0) }))
+    .map((item) => ({
+      talle: item.talle.trim(),
+      stock: Number(item.stock ?? 0),
+      precio: item.price ?? null,
+      unidades: item.units?.trim() || null,
+      imagen_url: item.image?.trim() || null,
+    }))
     .filter((item) => item.talle)
   if (cleaned.length === 0) return
 

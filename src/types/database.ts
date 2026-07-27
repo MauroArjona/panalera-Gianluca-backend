@@ -37,8 +37,8 @@ export interface Database {
       }
       talles: {
         Row: TalleRow
-        Insert: Pick<TalleRow, 'producto_id' | 'talle' | 'stock'>
-        Update: Partial<Pick<TalleRow, 'talle' | 'stock'>>
+        Insert: Pick<TalleRow, 'producto_id' | 'talle' | 'stock'> & Partial<Pick<TalleRow, 'precio' | 'unidades' | 'imagen_url'>>
+        Update: Partial<Pick<TalleRow, 'talle' | 'stock' | 'precio' | 'unidades' | 'imagen_url'>>
       }
     }
     Views: Record<string, never>

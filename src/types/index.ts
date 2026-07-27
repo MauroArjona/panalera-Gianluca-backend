@@ -24,6 +24,9 @@ export interface TalleRow {
   producto_id: number
   talle: string
   stock: number
+  precio: number | null
+  unidades: string | null
+  imagen_url: string | null
   created_at: string
 }
 
@@ -54,7 +57,7 @@ export interface ProductoApi {
   subcategory: string
   stock: number
   talle: string | null
-  talles: Array<{ id?: number; talle: string; stock: number }>
+  talles: Array<{ id?: number; talle: string; stock: number; price: number; units: string; image: string }>
   isPromo: boolean
   oldPrice: number | null
   marca: string | null
@@ -72,7 +75,7 @@ export interface ProductoInsert {
   en_carrusel?: boolean
   old_price?: number | null
   images?: string[]
-  talles?: Array<{ talle: string; stock: number }>
+  talles?: Array<{ talle: string; stock: number; price?: number | null; units?: string | null; image?: string | null }>
 }
 
 export type ProductoUpdate = Partial<ProductoInsert>
