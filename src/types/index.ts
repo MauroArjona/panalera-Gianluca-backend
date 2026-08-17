@@ -33,7 +33,7 @@ export interface TalleRow {
 export interface ProductoRow {
   id: number
   name: string
-  price: number
+  price: number | null
   created_at: string
   is_promo: boolean
   en_carrusel: boolean
@@ -68,7 +68,7 @@ export interface ProductoApi {
 
 export interface ProductoInsert {
   name: string
-  price: number
+  price?: number | null
   subcategoria_id?: number | null
   is_promo?: boolean
   destacado?: boolean

@@ -34,16 +34,18 @@ function toApi(p: ProductoRow): ProductoApi {
       id: item.id,
       talle: item.talle,
       stock: Number(item.stock ?? 0),
-      price: Number(item.precio ?? p.price),
+      price: Number(item.precio ?? p.price ?? 0),
       units: item.unidades ?? '',
       image: item.imagen_url ?? '',
     }))
   const stock = talles.reduce((sum, item) => sum + item.stock, 0)
+  const variantPrices = talles.map((item) => item.price).filter((price) => price > 0)
+  const effectivePrice = Number(p.price ?? (variantPrices.length ? Math.min(...variantPrices) : 0))
 
   return {
     id: p.id,
     name: p.name,
-    price: Number(p.price),
+    price: effectivePrice,
     image: images[0] ?? '',
     images,
     category: p.subcategoria?.categoria?.nombre ?? '',

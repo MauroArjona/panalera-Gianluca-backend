@@ -12,7 +12,7 @@ const talleSchema = z.object({
 
 const productoSchema = z.object({
   name: z.string().min(2, 'El nombre es demasiado corto'),
-  price: z.number().positive('El precio debe ser positivo'),
+  price: z.number().positive('El precio debe ser positivo').nullable().optional(),
   subcategoria_id: z.number().int().positive('La subcategoria es obligatoria').nullable().optional(),
   images: z.array(z.string().url('La imagen debe ser una URL valida')).default([]),
   talles: z.array(talleSchema).default([]),
