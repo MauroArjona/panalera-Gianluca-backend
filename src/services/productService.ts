@@ -4,6 +4,7 @@ import type { ProductoApi, ProductoInsert, ProductoRow, ProductoUpdate } from '.
 
 export interface ProductFilters {
   category?: string
+  section?: string
   categoriaId?: number
   subcategoriaId?: number
   search?: string
@@ -104,6 +105,62 @@ async function listSubcategoriaIdsByCategoria(categoriaId?: number) {
   return (data ?? []).map((item) => item.id as number)
 }
 
+function normalizeLabel(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+const sectionKeywords: Record<string, string[]> = {
+  panales: ['panal', 'pañal'],
+  higiene: ['toallita', 'higiene', 'crema', 'pomada', 'oleo', 'algodon', 'aposito', 'jabon', 'capilar', 'guante', 'hisopo'],
+  accesorios: ['mamadera', 'chupete', 'vaso', 'mordillo', 'bolso', 'accesorio'],
+}
+
+function categoryBelongsToSection(nombre: string, section?: string) {
+  if (!section) return false
+  const key = normalizeLabel(section)
+  const words = sectionKeywords[key]
+  if (!words) return false
+
+  const label = normalizeLabel(nombre)
+  if (key === 'accesorios') {
+    const belongsToPanales = sectionKeywords.panales.some((word) => label.includes(normalizeLabel(word)))
+    const belongsToHigiene = sectionKeywords.higiene.some((word) => label.includes(normalizeLabel(word)))
+    return !belongsToPanales && !belongsToHigiene
+  }
+
+  return words.some((word) => label.includes(normalizeLabel(word)))
+}
+
+async function listCategoriaIdsBySection(section?: string) {
+  if (!section) return undefined
+
+  const { data, error } = await supabase
+    .from('categorias')
+    .select('id,nombre')
+
+  if (error) throw new Error(error.message)
+
+  return (data ?? [])
+    .filter((item) => categoryBelongsToSection(String(item.nombre ?? ''), section))
+    .map((item) => item.id as number)
+}
+
+async function listSubcategoriaIdsByCategorias(categoriaIds?: number[]) {
+  if (!categoriaIds) return undefined
+  if (categoriaIds.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('subcategorias')
+    .select('id')
+    .in('categoria_id', categoriaIds)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((item) => item.id as number)
+}
+
 async function replaceImages(productId: number, images: string[]) {
   await supabase.from('imagenes').delete().eq('producto_id', productId)
   const cleaned = images.map((url) => url.trim()).filter(Boolean)
@@ -147,7 +204,10 @@ export const productService = {
     const to = from + perPage - 1
     const categoriaId = await resolveCategoriaId(filters.category, filters.categoriaId)
     const subcategoriaId = await resolveSubcategoriaId(undefined, filters.subcategoriaId)
-    const subcategoriaIds = await listSubcategoriaIdsByCategoria(categoriaId)
+    const sectionCategoriaIds = !categoriaId && !subcategoriaId ? await listCategoriaIdsBySection(filters.section) : undefined
+    const subcategoriaIds = sectionCategoriaIds
+      ? await listSubcategoriaIdsByCategorias(sectionCategoriaIds)
+      : await listSubcategoriaIdsByCategoria(categoriaId)
 
     let query = supabase
       .from('productos')

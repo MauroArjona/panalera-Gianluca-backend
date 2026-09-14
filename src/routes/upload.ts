@@ -105,7 +105,7 @@ router.get('/imagen', async (req: Request, res: Response) => {
         if (response.ok) {
           const buffer = Buffer.from(await response.arrayBuffer())
           res.setHeader('Content-Type', contentType)
-          res.setHeader('Cache-Control', 'public, max-age=86400')
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
           return res.send(buffer)
         }
       }
@@ -115,7 +115,7 @@ router.get('/imagen', async (req: Request, res: Response) => {
 
     const buffer = Buffer.from(await data.arrayBuffer())
     res.setHeader('Content-Type', imageContentType(data.type, path))
-    res.setHeader('Cache-Control', 'public, max-age=86400')
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
     return res.send(buffer)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error al obtener imagen'

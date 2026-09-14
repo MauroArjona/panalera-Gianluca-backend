@@ -30,6 +30,7 @@ export const productController = {
     try {
       const result = await productService.list({
         category: req.query.category as string | undefined,
+        section: req.query.section as string | undefined,
         categoriaId: req.query.categoriaId ? Number(req.query.categoriaId) : undefined,
         subcategoriaId: req.query.subcategoriaId ? Number(req.query.subcategoriaId) : undefined,
         search: req.query.search as string | undefined,
