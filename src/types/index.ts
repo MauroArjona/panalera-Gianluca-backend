@@ -49,6 +49,7 @@ export interface ProductoApi {
   id: number
   name: string
   price: number
+  generalPrice: number | null
   image: string
   images: string[]
   category: string

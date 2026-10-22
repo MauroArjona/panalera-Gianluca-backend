@@ -47,6 +47,7 @@ function toApi(p: ProductoRow): ProductoApi {
     id: p.id,
     name: p.name,
     price: effectivePrice,
+    generalPrice: p.price === null ? null : Number(p.price),
     image: images[0] ?? '',
     images,
     category: p.subcategoria?.categoria?.nombre ?? '',
